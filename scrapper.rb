@@ -44,11 +44,11 @@ xpath_expressions[:manager_home] = '//div[@class = "lnupTeam"]/child::text()'
 xpath_expressions[:manager_visiting] = '//div[@class = "lnupTeam away"]/child::text()'
 
 ### yellow (cautions) and red (expulsions) cards. It returns a list of names and minutes. i.e: Arne FRIEDRICH (GER) 47'
-xpath_expressions[:cautions] = '//div[@class="cont"]/ul[contains(div, "Cautions")]//tr/td'
-xpath_expressions[:expulsions] = '//div[@class="cont"]/ul[contains(div, "Expulsions")]//tr/td'
+xpath_expressions[:cautions] = '//div[@class="cont"]/ul[contains(div, "Cautions")]/li'
+xpath_expressions[:expulsions] = '//div[@class="cont"]/ul[contains(div, "Expulsions")]/li'
 
 ### Aditional time for each time, a list containing the concept (first half, second half...) and the amoun ot minutes
-xpath_expressions[:additional_time] = '//div[@class="cont"]/ul[contains(div, "Additional time")]//tr/td'
+xpath_expressions[:additional_time] = '//div[@class="cont"]/ul[contains(div, "Additional time")]/li[normalize-space(.) !=  ""]'
 
 # other
 # 
@@ -92,15 +92,16 @@ match_links.each do |url|
   match_info[:home_player_name] = match_info[:home_player_name][0].content
   match_info[:visiting_player_name] = match_info[:visiting_player_name][0].content
 
-  puts "Match #{match_number}: #{match_info[:home_player_name]} - #{match_info[:visiting_player_name]} -- #{url}"
-  puts "Home team: #{match_info[:home_player_name].inspect}"
-  puts "Visiting team: #{match_info[:visiting_player_name].inspect}"
+
+  puts "\#\#\#\# Match #{match_number}: #{match_info[:home_player_name]} - #{match_info[:visiting_player_name]} -- #{url}"
+  puts "\#\# Home team: #{match_info[:home_player_name].inspect}"
+  puts "\#\# Visiting team: #{match_info[:visiting_player_name].inspect}\n\n"
 
   ####################### Scores
   match_info[:score] = match_info[:score][0].content.gsub(/[\(\)]/,"").split(" ").map{|s| s.split(":") }.flatten
   match_info[:score] = {:home_final => match_info[:score][0], :visiting_final => match_info[:score][1], :home_partial => match_info[:score][2], :visiting_partial => match_info[:score][3]}
   
-  puts "Score: #{match_info[:score].inspect}"
+  puts "\#\# Score: #{match_info[:score].inspect}\n\n"
 
   ###################### Scorers
   scorers = []
@@ -114,7 +115,7 @@ match_links.each do |url|
     end
   end
   match_info[:scorers] = scorers
-  puts "Scorers #{scorers.inspect}"
+  puts "\#\#\#\# Scorers \n\n #{scorers.inspect}\n\n"
 
   ######################### Referees
   referees = {}
@@ -129,12 +130,11 @@ match_links.each do |url|
   end
 
   match_info[:referees] = referees
-  puts "Referees #{match_info[:referees].inspect}"
+  puts "\#\#\#\# Referees \n\n#{match_info[:referees].inspect}\n\n"
 
   ######################### Lineups
 
   players = {}
-  substitutes = {}
   [:home, :visiting].each do |lineup_team|
     players[lineup_team] = {}
     [:lineup, :substitutes].each do |player_type|
@@ -148,12 +148,52 @@ match_links.each do |url|
 
       end
     end
-
   end
 
   match_info[:players] = players
 
-  puts match_info[:players].inspect
+  puts "\#\#\#\# Players \n\n#{match_info[:players].inspect}\n\n"
+
+  ############################ Managers
+  managers = {}
+
+  [:home, :visiting].each do |manager_team|
+    managers[manager_team] = {
+      :name => match_info[:"manager_#{manager_team}"][0].content.match(/(.)*\(/)[0].sub("(","").downcase.strip,
+      :country => match_info[:"manager_#{manager_team}"][0].content.match(/\((.)*\)/)[0].gsub(/[\(\)\']/, "").strip
+    }
+  end
+
+  match_info[:managers] = managers
+   puts "\#\#\#\# Managers \n\n#{match_info[:managers].inspect}\n\n"
+
+  ########################## Cards
+
+  cards = []
+  [:cautions, :expulsions].each do |card_type|
+    match_info[card_type].each do|card|
+      # Arne FRIEDRICH (GER) 47'
+      cards << {
+        :player => card.content.match(/(.)*\(/)[0].sub("(","").downcase.strip,
+        :team => card.content.match(/\((.)*\)/)[0].gsub(/[\(\)\']/, "").strip,
+        :minute => card.content.match(/\)(.)*$/)[0].gsub(/[\)\']/,"").downcase.strip
+      }
+    end
+  end
+
+  match_info[:cards] = cards
+  puts "\#\#\#\# Cards \n\n#{match_info[:cards].inspect}\n\n"
+
+  ########################### Additional time
+  additional_time = {}
+  match_info[:additional_time].each do |time|
+    time = time.content.split(":")
+    additional_time[time[0].strip] = time[1].strip.sub("\'", "")
+  end
+  match_info[:additional_time] = additional_time
+   puts "\#\#\#\# Additional time \n\n#{match_info[:additional_time].inspect}\n\n"
+
+  #
   # do the stuff
   break;
 end
