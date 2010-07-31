@@ -143,8 +143,12 @@ match_links.each do |url|
       match_info[:"#{player_type}_#{lineup_team}"].each do |player|
         player_number = player.xpath("div/a")[0].content
         player_name = player.xpath("div/span")[0].content.gsub(/\((.)*\)/, "").strip
+        player_in = player.xpath("div/span")[0].content.match(/\+(\d)+/)
+        player_in = player_in[0].strip.sub("+", "") unless player_in.nil?
+        player_out = player.xpath("div/span")[0].content.match(/\-(\d)+/)
+        player_out = player_out[0].strip.sub("-", "") unless player_out.nil?
 
-        players[lineup_team][player_type] << {:number => player_number, :name => player_name }
+        players[lineup_team][player_type] << {:number => player_number, :name => player_name, :in => player_in, :out => player_out }
 
       end
     end
@@ -196,4 +200,5 @@ match_links.each do |url|
   #
   # do the stuff
   break;
+
 end
