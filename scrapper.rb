@@ -2,6 +2,15 @@ require 'rubygems'
 require 'nokogiri'
 require 'open-uri'
 
+
+
+def add_to_summary summary, match_info, match_time, subject, action, object = nil
+
+  summary[match_time] = [] if summary[match_time].nil?
+  summary[match_time] << {:match_time => match_time, :subject => subject, :object => object, :action => action }
+  summary
+end
+
 # CONFIG
 
 # FIFA.com URLs
@@ -14,6 +23,13 @@ group_xpath = '//a[@title = "Summary"]/@href'
 final_stage_xpath = '//a[@title = "Summary"]/@href'
 
 xpath_expressions = {}
+
+xpath_expressions[:match_number] = '//div[@class="hdTeams"]//div[@class="cont"]//tbody//td[1]'
+xpath_expressions[:match_date] = '//div[@class="hdTeams"]//div[@class="cont"]//tbody//td[2]'
+xpath_expressions[:match_time] = '//div[@class="hdTeams"]//div[@class="cont"]//tbody//td[3]'
+xpath_expressions[:match_venue] = '//div[@class="hdTeams"]//div[@class="cont"]//tbody//td[4]'
+xpath_expressions[:match_attendance] = '//div[@class="hdTeams"]//div[@class="cont"]//tbody//td[5]'
+
 ### The plain name of the teams
 xpath_expressions[:home_player_name] = '//div[@class = "teamH"]/div[@class = "name"]/a'
 xpath_expressions[:visiting_player_name] = '//div[@class = "teamA"]/div[@class = "name"]/a'
@@ -92,10 +108,18 @@ match_links.each do |url|
   match_info[:home_player_name] = match_info[:home_player_name][0].content
   match_info[:visiting_player_name] = match_info[:visiting_player_name][0].content
 
+  match_info[:match_number] = match_info[:match_number][0].content
+  match_info[:match_date] = match_info[:match_date][0].content
+  match_info[:match_time] = match_info[:match_time][0].content
+  match_info[:match_venue] = match_info[:match_venue][0].content
+  match_info[:match_attendance] = match_info[:match_attendance][0].content
 
-  puts "\#\#\#\# Match #{match_number}: #{match_info[:home_player_name]} - #{match_info[:visiting_player_name]} -- #{url}"
+  puts "\#\#\#\# Match #{match_info[:match_number]}: #{match_info[:home_player_name]} - #{match_info[:visiting_player_name]} -- #{url}"
   puts "\#\# Home team: #{match_info[:home_player_name].inspect}"
-  puts "\#\# Visiting team: #{match_info[:visiting_player_name].inspect}\n\n"
+  puts "\#\# Visiting team: #{match_info[:visiting_player_name].inspect}"
+  puts "\#\# Date/Time: #{match_info[:match_date]} #{match_info[:match_time]}"
+  puts "\#\# Venue: #{match_info[:match_venue]}"
+  puts "\#\# Attendance: #{match_info[:match_attendance]}\n\n"
 
   ####################### Scores
   match_info[:score] = match_info[:score][0].content.gsub(/[\(\)]/,"").split(" ").map{|s| s.split(":") }.flatten
@@ -135,6 +159,7 @@ match_links.each do |url|
   ######################### Lineups
 
   players = {}
+  substitutions = {}
   [:home, :visiting].each do |lineup_team|
     players[lineup_team] = {}
     [:lineup, :substitutes].each do |player_type|
@@ -142,11 +167,27 @@ match_links.each do |url|
     
       match_info[:"#{player_type}_#{lineup_team}"].each do |player|
         player_number = player.xpath("div/a")[0].content
-        player_name = player.xpath("div/span")[0].content.gsub(/\((.)*\)/, "").strip
+        player_name = player.xpath("div/span")[0].content.gsub(/\((.)*\)/, "").strip.downcase
         player_in = player.xpath("div/span")[0].content.match(/\+(\d)+/)
-        player_in = player_in[0].strip.sub("+", "") unless player_in.nil?
+        unless player_in.nil?
+          player_in = player_in[0].strip.sub("+", "")
+          substitutions[player_in] = [] if substitutions[player_in].nil?
+          if substitutions[player_in].select{|p| p[:in].nil?}.empty?
+            substitutions[player_in] << {:in => player_name}
+          else
+            substitutions[player_in].select{|p| p[:in].nil?}.first[:in] = player_name
+          end
+        end
         player_out = player.xpath("div/span")[0].content.match(/\-(\d)+/)
-        player_out = player_out[0].strip.sub("-", "") unless player_out.nil?
+        unless player_out.nil?
+          player_out = player_out[0].strip.sub("-", "")
+          substitutions[player_out] = [] if substitutions[player_out].nil?
+          if substitutions[player_out].select{|p| p[:out].nil?}.empty?
+            substitutions[player_out] << {:out => player_name}
+          else
+            substitutions[player_out].select{|p| p[:out].nil?}.first[:out] = player_name
+          end
+        end
 
         players[lineup_team][player_type] << {:number => player_number, :name => player_name, :in => player_in, :out => player_out }
 
@@ -155,8 +196,10 @@ match_links.each do |url|
   end
 
   match_info[:players] = players
+  match_info[:substitutions] = substitutions
 
   puts "\#\#\#\# Players \n\n#{match_info[:players].inspect}\n\n"
+  puts "\#\#\#\# Substitutions \n\n#{match_info[:substitutions].inspect}\n\n"
 
   ############################ Managers
   managers = {}
@@ -169,7 +212,7 @@ match_links.each do |url|
   end
 
   match_info[:managers] = managers
-   puts "\#\#\#\# Managers \n\n#{match_info[:managers].inspect}\n\n"
+  puts "\#\#\#\# Managers \n\n#{match_info[:managers].inspect}\n\n"
 
   ########################## Cards
 
@@ -195,9 +238,31 @@ match_links.each do |url|
     additional_time[time[0].strip] = time[1].strip.sub("\'", "")
   end
   match_info[:additional_time] = additional_time
-   puts "\#\#\#\# Additional time \n\n#{match_info[:additional_time].inspect}\n\n"
+  puts "\#\#\#\# Additional time \n\n#{match_info[:additional_time].inspect}\n\n"
 
-  #
+  ############################ Summary
+  summary = {}
+
+  ## scores
+  match_info[:scorers].each do |scorer|
+    summary = add_to_summary summary, match_info, scorer[:minute], scorer[:player], "goal"
+  end
+
+  ## substitutions
+  match_info[:substitutions].each do |substitutions|
+    substitutions[1].each do |substitution|
+      summary = add_to_summary summary, match_info, substitutions[0], substitution[:in], "substitution", substitution[:out]
+    end
+
+  end
+
+
+  puts "\#\#\#\# Summary\n"
+  summary.sort.each do |minute|
+    minute[1].each do |action|
+      puts "Minute #{minute[0]}: #{action[:action]} - #{action[:subject]} - #{action[:object]}"
+    end
+  end
   # do the stuff
   break;
 
