@@ -1,13 +1,32 @@
 require 'rubygems'
 require 'nokogiri'
 require 'open-uri'
+require 'date'
+require 'time'
+require 'active_support'
 
 
 
 def add_to_summary summary, match_info, match_time, subject, action, object = nil
 
   summary[match_time] = [] if summary[match_time].nil?
-  summary[match_time] << {:match_time => match_time, :subject => subject, :object => object, :action => action }
+
+  time = DateTime.parse("#{match_info[:match_date]} #{match_info[:match_time]}")
+  time = time + match_time.to_i.minutes
+
+  if match_time.to_i > 45
+    time = time + (match_info[:additional_time]["First Half"].to_i).minutes
+    time = time + 15.minutes # the usual break between the two halves
+  end
+
+  if match_time.to_i > 90
+    time = time + match_info[:additional_time]["Second Half"].to_i.minutes
+    time = time + 15.minutes # the usual break between the second half and the extra time
+  end
+
+
+
+  summary[match_time] << {:time => time, :match_time => match_time, :subject => subject, :object => object, :action => action }
   summary
 end
 
@@ -216,12 +235,13 @@ match_links.each do |url|
 
   ########################## Cards
 
-  cards = []
+  cards = {}
   [:cautions, :expulsions].each do |card_type|
+    cards[card_type] = []
     match_info[card_type].each do|card|
       # Arne FRIEDRICH (GER) 47'
-      cards << {
-        :player => card.content.match(/(.)*\(/)[0].sub("(","").downcase.strip,
+      cards[card_type] << {
+        :player => card.content.match(/(.)*\(/)[0].gsub(/[,\(]/,"").downcase.strip,
         :team => card.content.match(/\((.)*\)/)[0].gsub(/[\(\)\']/, "").strip,
         :minute => card.content.match(/\)(.)*$/)[0].gsub(/[\)\']/,"").downcase.strip
       }
@@ -243,6 +263,11 @@ match_links.each do |url|
   ############################ Summary
   summary = {}
 
+  summary = add_to_summary summary, match_info, "0", nil, "beginning"
+  summary = add_to_summary summary, match_info, "45", nil, "end_first_half"
+  summary = add_to_summary summary, match_info, "46", nil, "beginning_second_half"
+  summary = add_to_summary summary, match_info, "90", nil, "end_second_half"
+
   ## scores
   match_info[:scorers].each do |scorer|
     summary = add_to_summary summary, match_info, scorer[:minute], scorer[:player], "goal"
@@ -253,14 +278,19 @@ match_links.each do |url|
     substitutions[1].each do |substitution|
       summary = add_to_summary summary, match_info, substitutions[0], substitution[:in], "substitution", substitution[:out]
     end
+  end
 
+  match_info[:cards].each do |card_type|
+    card_type[1].each do |card|
+      summary = add_to_summary summary, match_info, card[:minute], nil, card_type[0], card[:player]
+    end
   end
 
 
   puts "\#\#\#\# Summary\n"
   summary.sort.each do |minute|
     minute[1].each do |action|
-      puts "Minute #{minute[0]}: #{action[:action]} - #{action[:subject]} - #{action[:object]}"
+      puts "#{action[:time]} Minute #{minute[0]}: #{action[:action]} - #{action[:subject]} - #{action[:object]}"
     end
   end
   # do the stuff
