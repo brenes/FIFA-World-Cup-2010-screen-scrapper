@@ -9,24 +9,27 @@ require 'active_support'
 
 def add_to_summary summary, match_info, match_time, subject, action, object = nil
 
-  summary[match_time] = [] if summary[match_time].nil?
+  summary_time = match_time.split("+")
+  
+  summary[match_time.length > 1 ? match_time : "0#{match_time}"] = [] if summary[match_time].nil?
 
   time = DateTime.parse("#{match_info[:match_date]} #{match_info[:match_time]}")
-  time = time + match_time.to_i.minutes
+  time = time + summary_time[0].to_i.minutes
+  time = time + summary_time[1].to_i.minutes
 
-  if match_time.to_i > 45
+  if summary_time[0].to_i > 45
     time = time + (match_info[:additional_time]["First Half"].to_i).minutes
     time = time + 15.minutes # the usual break between the two halves
   end
 
-  if match_time.to_i > 90
+  if summary_time[0].to_i > 90
     time = time + match_info[:additional_time]["Second Half"].to_i.minutes
     time = time + 15.minutes # the usual break between the second half and the extra time
   end
 
 
 
-  summary[match_time] << {:time => time, :match_time => match_time, :subject => subject, :object => object, :action => action }
+  summary[match_time.length > 1 ? match_time : "0#{match_time}"] << {:time => time, :match_time => match_time, :subject => subject, :object => object, :action => action }
   summary
 end
 
@@ -117,7 +120,6 @@ match_number = 1
 match_links.each do |url|
 
   puts "-----------------------------------------------------"
-  
   report_web = Nokogiri::HTML(open("#{fifa_domain}#{url}"))
 
   match_info = {}
@@ -148,17 +150,25 @@ match_links.each do |url|
 
   ###################### Scorers
   scorers = []
+  penalties = []
   [:home, :visiting].each do |score_team|
     match_info[:"scorers_#{score_team}"].each do |scorer|
       scorer_name = scorer.content.match(/(.)*\(/)[0].sub("(","").downcase.strip
       scores_minutes = scorer.content.match(/\((.)*\)/)[0].gsub(/[\(\)\']/, "").split(",")
       scores_minutes.each do |minute|
-        scorers << {:minute => minute, :player => scorer_name, :team => score_team.to_s}
+        scorers << {:minute => minute.gsub("PEN", "").strip, :player => scorer_name, :team => score_team.to_s}
+        unless minute.index("PEN").nil?
+          penalties << {:minute => minute.gsub("PEN", "").strip, :scorer => scorer_name, :team => score_team.to_s}
+        end
       end
     end
   end
+
   match_info[:scorers] = scorers
+  match_info[:penalties] = penalties
+
   puts "\#\#\#\# Scorers \n\n #{scorers.inspect}\n\n"
+  puts "\#\#\#\# Penalties \n\n #{penalties.inspect}\n\n"
 
   ######################### Referees
   referees = {}
@@ -264,13 +274,18 @@ match_links.each do |url|
   summary = {}
 
   summary = add_to_summary summary, match_info, "0", nil, "beginning"
-  summary = add_to_summary summary, match_info, "45", nil, "end_first_half"
+  summary = add_to_summary summary, match_info, "45+#{match_info[:additional_time]["First Half"]}", nil, "end_first_half"
   summary = add_to_summary summary, match_info, "46", nil, "beginning_second_half"
-  summary = add_to_summary summary, match_info, "90", nil, "end_second_half"
+  summary = add_to_summary summary, match_info, "90+#{match_info[:additional_time]["Second Half"]}", nil, "end_second_half"
 
   ## scores
   match_info[:scorers].each do |scorer|
     summary = add_to_summary summary, match_info, scorer[:minute], scorer[:player], "goal"
+  end
+
+  ## penalties
+  match_info[:penalties].each do |penalty|
+    summary = add_to_summary summary, match_info, penalty[:minute], nil, "penalty",  penalty[:scorer]
   end
 
   ## substitutions
