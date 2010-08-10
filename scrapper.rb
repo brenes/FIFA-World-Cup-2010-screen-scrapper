@@ -11,7 +11,7 @@ def add_to_summary summary, match_info, match_time, subject, action, object = ni
 
   summary_time = match_time.split("+")
   
-  summary[match_time.length > 1 ? match_time : "0#{match_time}"] = [] if summary[match_time].nil?
+  summary[match_time.length > 1 ? match_time : "#{match_time}"] = [] if summary[match_time].nil?
 
   time = DateTime.parse("#{match_info[:match_date]} #{match_info[:match_time]}")
   time = time + summary_time[0].to_i.minutes
@@ -27,9 +27,13 @@ def add_to_summary summary, match_info, match_time, subject, action, object = ni
     time = time + 15.minutes # the usual break between the second half and the extra time
   end
 
+  if summary_time[0].to_i > 115
+    time = time + match_info[:additional_time]["First Extra Time"].to_i.minutes
+  end
 
 
-  summary[match_time.length > 1 ? match_time : "0#{match_time}"] << {:time => time, :match_time => match_time, :subject => subject, :object => object, :action => action }
+
+  summary[match_time.length > 1 ? match_time : "#{match_time}"] << {:time => time, :match_time => match_time, :subject => subject, :object => object, :action => action }
   summary
 end
 
@@ -277,6 +281,8 @@ match_links.each do |url|
   summary = add_to_summary summary, match_info, "45+#{match_info[:additional_time]["First Half"]}", nil, "end_first_half"
   summary = add_to_summary summary, match_info, "46", nil, "beginning_second_half"
   summary = add_to_summary summary, match_info, "90+#{match_info[:additional_time]["Second Half"]}", nil, "end_second_half"
+  summary = add_to_summary summary, match_info, "105+#{match_info[:additional_time]["First Extra Time"]}", nil, "end_first_extra_time" unless match_info[:additional_time]["First Extra Time"].nil?
+  summary = add_to_summary summary, match_info, "120+#{match_info[:additional_time]["Second Extra Time"]}", nil, "end_second_extra_time" unless match_info[:additional_time]["Second Extra Time"].nil?
 
   ## scores
   match_info[:scorers].each do |scorer|
@@ -303,7 +309,7 @@ match_links.each do |url|
 
 
   puts "\#\#\#\# Summary\n"
-  summary.sort.each do |minute|
+  summary.sort{|m1, m2| m1[0].to_i <=> m2[0].to_i}.each do |minute|
     minute[1].each do |action|
       puts "#{action[:time]} Minute #{minute[0]}: #{action[:action]} - #{action[:subject]} - #{action[:object]}"
     end
